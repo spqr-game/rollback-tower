@@ -1,0 +1,19 @@
+services:
+  rollback-tower:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      POLL_INTERVAL: "300s"
+      WEBHOOK_TOKEN: "change-me"
+      # ADMIN_PASSWORD: "set-to-require-login"
+      # SESSION_SECRET: "required-if-admin-password-set"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ~/.docker/config.json:/root/.docker/config.json:ro
+
+  # Example watched container:
+  # web:
+  #   image: nginx:latest
+  #   labels:
+  #     rollback-tower.enable: "true"
