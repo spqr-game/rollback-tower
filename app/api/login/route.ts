@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/config";
 import { signSession } from "@/lib/auth/session";
+import { tokenMatches } from "@/lib/auth/webhook";
 
 export async function POST(request: Request): Promise<Response> {
   const config = loadConfig(process.env);
@@ -8,7 +9,9 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.redirect(new URL("/", request.url));
   }
   const form = await request.formData();
-  if (form.get("password") !== config.adminPassword) {
+  const submitted = form.get("password");
+  const provided = typeof submitted === "string" ? submitted : null;
+  if (!tokenMatches(config.adminPassword, provided)) {
     return NextResponse.redirect(new URL("/login?error=1", request.url));
   }
   const response = NextResponse.redirect(new URL("/", request.url));
@@ -16,6 +19,7 @@ export async function POST(request: Request): Promise<Response> {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
+    secure: process.env.NODE_ENV === "production",
   });
   return response;
 }
