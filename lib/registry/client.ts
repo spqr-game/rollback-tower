@@ -71,9 +71,10 @@ export class RegistryClient {
     if (accept) {
       headers.Accept = accept;
     }
-    const first = await this.fetchImpl(url, undefined);
+    const initHeaders = Object.keys(headers).length > 0 ? { headers } : undefined;
+    const first = await this.fetchImpl(url, initHeaders);
     if (first.status !== 401) {
-      return accept ? this.fetchImpl(url, { headers }) : first;
+      return first;
     }
     const challenge = parseChallenge(first.headers.get("www-authenticate") ?? "");
     if (!challenge) {
@@ -93,13 +94,11 @@ export class RegistryClient {
     );
     const tokenBody = tokenResponseSchema.parse(await tokenResp.json());
     const token = tokenBody.token ?? tokenBody.access_token;
-    if (accept) {
-      headers.Accept = accept;
-    }
+    const retryHeaders: Record<string, string> = { ...headers };
     if (token) {
-      headers.Authorization = `Bearer ${token}`;
+      retryHeaders.Authorization = `Bearer ${token}`;
     }
-    return this.fetchImpl(url, { headers });
+    return this.fetchImpl(url, { headers: retryHeaders });
   }
 
   async listTags(repository: string): Promise<string[]> {
