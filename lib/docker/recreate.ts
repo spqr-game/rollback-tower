@@ -27,6 +27,18 @@ export function buildCreateOptions(
     NetworkingConfig: info.NetworkSettings?.Networks
       ? { EndpointsConfig: info.NetworkSettings.Networks }
       : undefined,
+    Hostname: info.Config?.Hostname ?? undefined,
+    Domainname: info.Config?.Domainname ?? undefined,
+    User: info.Config?.User ?? undefined,
+    WorkingDir: info.Config?.WorkingDir ?? undefined,
+    Volumes: info.Config?.Volumes ?? undefined,
+    Tty: info.Config?.Tty ?? undefined,
+    OpenStdin: info.Config?.OpenStdin ?? undefined,
+    StdinOnce: info.Config?.StdinOnce ?? undefined,
+    AttachStdin: info.Config?.AttachStdin ?? undefined,
+    AttachStdout: info.Config?.AttachStdout ?? undefined,
+    AttachStderr: info.Config?.AttachStderr ?? undefined,
+    Healthcheck: info.Config?.Healthcheck ?? undefined,
   };
 }
 
@@ -67,10 +79,15 @@ export async function recreateWithImage(args: {
     await created.start();
     return created.id;
   } catch (error) {
-    // best-effort restore: recreate the previous container from captured config
-    const restore = buildCreateOptions(info, info.Config?.Image ?? image, {});
-    const restored = await docker.createContainer(restore);
-    await restored.start();
+    // Best-effort restore of the previous container; a restore failure must
+    // never mask the original create/start error.
+    try {
+      const restore = buildCreateOptions(info, info.Config?.Image ?? image, {});
+      const restored = await docker.createContainer(restore);
+      await restored.start();
+    } catch {
+      // swallow the restore failure; the original error below is what matters
+    }
     throw error;
   }
 }
