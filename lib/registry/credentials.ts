@@ -36,14 +36,6 @@ export function credentialForRegistry(
   registry: string,
   warn: (msg: string) => void = () => {},
 ): RegistryCredential | null {
-  const helper = config.credHelpers?.[registry] ?? config.credsStore;
-  if (helper) {
-    warn(
-      `Registry ${registry} uses credential helper "${helper}"; ` +
-        "helpers are unsupported in v1, falling back to anonymous access",
-    );
-    return null;
-  }
   for (const key of candidateKeys(registry)) {
     const entry = config.auths[key];
     if (entry?.auth) {
@@ -53,6 +45,13 @@ export function credentialForRegistry(
         return { username: decoded.slice(0, sep), password: decoded.slice(sep + 1) };
       }
     }
+  }
+  const helper = config.credHelpers?.[registry] ?? config.credsStore;
+  if (helper) {
+    warn(
+      `Registry ${registry} uses credential helper "${helper}"; ` +
+        "helpers are unsupported in v1, falling back to anonymous access",
+    );
   }
   return null;
 }

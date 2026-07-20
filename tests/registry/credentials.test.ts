@@ -32,4 +32,18 @@ describe("credentialForRegistry", () => {
     const cfg = parseDockerConfig(JSON.stringify({ auths: {} }));
     expect(credentialForRegistry(cfg, "ghcr.io")).toBeNull();
   });
+  it("prefers an explicit auth entry over a configured credsStore", () => {
+    const warn = vi.fn();
+    const cfg = parseDockerConfig(
+      JSON.stringify({ auths: { "ghcr.io": { auth: b64("user:pass") } }, credsStore: "desktop" }),
+    );
+    expect(credentialForRegistry(cfg, "ghcr.io", warn)).toEqual({ username: "user", password: "pass" });
+    expect(warn).not.toHaveBeenCalled();
+  });
+  it("warns and returns null for a per-registry credHelper with no inline auth", () => {
+    const warn = vi.fn();
+    const cfg = parseDockerConfig(JSON.stringify({ auths: {}, credHelpers: { "ghcr.io": "ecr-login" } }));
+    expect(credentialForRegistry(cfg, "ghcr.io", warn)).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+  });
 });
