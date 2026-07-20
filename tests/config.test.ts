@@ -32,4 +32,8 @@ describe("loadConfig", () => {
     expect(c.sessionSecret).toBe("s");
     expect(c.maxTags).toBe(10);
   });
+  it("falls back to MAX_TAGS default on a non-numeric value", () => {
+    expect(loadConfig({ MAX_TAGS: "abc" }).maxTags).toBe(50);
+    expect(loadConfig({ MAX_TAGS: "-5" }).maxTags).toBe(50);
+  });
 });

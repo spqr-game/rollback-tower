@@ -41,12 +41,20 @@ async function clientForRegistry(registry: string): Promise<RegistryClient> {
 async function inspectWatched(): Promise<WatchedContainer[]> {
   const docker = getDocker();
   const infos = await listWatched(docker);
-  return Promise.all(
-    infos.map(async (info) => toWatched(await docker.getContainer(info.Id).inspect())),
+  const results = await Promise.all(
+    infos.map(async (info): Promise<WatchedContainer | null> => {
+      try {
+        return toWatched(await docker.getContainer(info.Id).inspect());
+      } catch (error) {
+        console.error(`failed to inspect container ${info.Id}`, error);
+        return null;
+      }
+    }),
   );
+  return results.filter((c): c is WatchedContainer => c !== null);
 }
 
-export async function scan(opts: { repo?: string } = {}): Promise<ScanReport> {
+async function performScan(opts: { repo?: string } = {}): Promise<ScanReport> {
   const config = loadConfig(process.env);
   const watched = await inspectWatched();
   const containers = await Promise.all(
@@ -68,7 +76,7 @@ export async function scan(opts: { repo?: string } = {}): Promise<ScanReport> {
           await recreateWithImage({
             docker: getDocker(),
             containerId: container.id,
-            image: formatImageRef(ref),
+            image: formatImageRef({ ...ref, digest: null }),
             labelOverrides: {},
           });
         }
@@ -93,6 +101,18 @@ export async function scan(opts: { repo?: string } = {}): Promise<ScanReport> {
     }),
   );
   return { scannedAt: new Date().toISOString(), containers };
+}
+
+let scanInFlight: Promise<ScanReport> | null = null;
+
+export async function scan(opts: { repo?: string } = {}): Promise<ScanReport> {
+  if (scanInFlight) {
+    return scanInFlight;
+  }
+  scanInFlight = performScan(opts).finally(() => {
+    scanInFlight = null;
+  });
+  return scanInFlight;
 }
 
 export async function applyTag(containerId: string, tag: string): Promise<void> {

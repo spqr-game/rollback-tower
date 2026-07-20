@@ -26,6 +26,14 @@ function defaultDockerConfigPath(env: Partial<NodeJS.ProcessEnv>): string {
   return `${home}/.docker/config.json`;
 }
 
+function parseMaxTags(value: string | undefined): number {
+  if (!value) {
+    return 50;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+}
+
 export function loadConfig(env: Partial<NodeJS.ProcessEnv>): Config {
   const adminPassword = env.ADMIN_PASSWORD ? env.ADMIN_PASSWORD : null;
   const sessionSecret = env.SESSION_SECRET ? env.SESSION_SECRET : null;
@@ -36,7 +44,7 @@ export function loadConfig(env: Partial<NodeJS.ProcessEnv>): Config {
     pollIntervalMs: parseDuration(env.POLL_INTERVAL ?? "300s"),
     adminPassword,
     webhookToken: env.WEBHOOK_TOKEN ? env.WEBHOOK_TOKEN : null,
-    maxTags: env.MAX_TAGS ? Number(env.MAX_TAGS) : 50,
+    maxTags: parseMaxTags(env.MAX_TAGS),
     dockerConfigPath: defaultDockerConfigPath(env),
     sessionSecret,
   };

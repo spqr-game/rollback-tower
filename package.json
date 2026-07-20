@@ -2,10 +2,7 @@
   "name": "initial-app",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,8 +12,7 @@
     "test": "vitest run"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "dockerode": "^5.0.1",
     "next": "^16.2.10",
