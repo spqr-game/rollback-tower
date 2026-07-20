@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Language:** TypeScript. No `any` and no `unknown` types (project owner preference).
+- **Language:** TypeScript. No `any` and no `unknown` in production code (project owner preference). Validate ALL external JSON — the docker config file and every registry HTTP/token/manifest response — with **zod** schemas, inferring types from the schema. Do not hand-cast parsed JSON with `as`. Test-only exception: a single localized `as unknown as <LibType>` double-assertion is permitted solely to fake a complex third-party type (e.g. a `dockerode` instance or `ContainerInspectInfo` fixture); prefer narrow structural interfaces where practical so fixtures need no cast.
 - **Style:** 2-space indentation; always end optional-semicolon lines with semicolons.
 - **Labels:** watch opt-in = `rollback-tower.enable=true`; pin marker = `rollback-tower.rolled-back=<tag-or-digest>`.
 - **Auth:** UI + mutating API gated by `ADMIN_PASSWORD` only when it is set; otherwise open. `/api/webhook` always requires `WEBHOOK_TOKEN` (constant-time compare) and returns 503 when the token is unset.
@@ -76,7 +76,7 @@ Dockerfile, docker-compose.example.yml, README.md
 Run in the worktree root:
 ```bash
 npm init -y
-npm install next@latest react@latest react-dom@latest dockerode
+npm install next@latest react@latest react-dom@latest dockerode zod
 npm install -D typescript @types/node @types/react @types/react-dom @types/dockerode vitest @vitejs/plugin-react eslint eslint-config-next
 ```
 
@@ -509,12 +509,10 @@ git commit -m "feat: parse and format docker image references"
 - Produces:
   ```ts
   export interface RegistryCredential { username: string; password: string; }
-  export interface DockerConfig {
-    auths: Record<string, { auth?: string }>;
-    credsStore?: string;
-    credHelpers?: Record<string, string>;
-  }
-  export function parseDockerConfig(json: string): DockerConfig;
+  // DockerConfig is `z.infer` of the zod schema in the impl:
+  //   { auths: Record<string, { auth?: string }>; credsStore?: string; credHelpers?: Record<string,string> }
+  export type DockerConfig = z.infer<typeof dockerConfigSchema>;
+  export function parseDockerConfig(json: string): DockerConfig; // validates via zod
   export function credentialForRegistry(
     config: DockerConfig,
     registry: string,
@@ -572,16 +570,21 @@ Expected: FAIL (module not found).
 
 `lib/registry/credentials.ts`:
 ```ts
+import { z } from "zod";
+
 export interface RegistryCredential {
   username: string;
   password: string;
 }
 
-export interface DockerConfig {
-  auths: Record<string, { auth?: string }>;
-  credsStore?: string;
-  credHelpers?: Record<string, string>;
-}
+const authEntrySchema = z.object({ auth: z.string().optional() });
+const dockerConfigSchema = z.object({
+  auths: z.record(z.string(), authEntrySchema).default({}),
+  credsStore: z.string().optional(),
+  credHelpers: z.record(z.string(), z.string()).optional(),
+});
+
+export type DockerConfig = z.infer<typeof dockerConfigSchema>;
 
 const HUB_HOSTS = new Set([
   "registry-1.docker.io",
@@ -590,17 +593,7 @@ const HUB_HOSTS = new Set([
 ]);
 
 export function parseDockerConfig(json: string): DockerConfig {
-  const raw: unknown = JSON.parse(json);
-  if (typeof raw !== "object" || raw === null) {
-    return { auths: {} };
-  }
-  const record = raw as Record<string, unknown>;
-  const auths = (record.auths as DockerConfig["auths"]) ?? {};
-  return {
-    auths,
-    credsStore: typeof record.credsStore === "string" ? record.credsStore : undefined,
-    credHelpers: (record.credHelpers as Record<string, string>) ?? undefined,
-  };
+  return dockerConfigSchema.parse(JSON.parse(json));
 }
 
 function candidateKeys(registry: string): string[] {
@@ -683,7 +676,7 @@ git commit -m "feat: read registry credentials from docker config"
 import { describe, expect, it, vi } from "vitest";
 import { RegistryClient } from "@/lib/registry/client";
 
-function jsonResponse(body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(body: object, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status: 200, headers });
 }
 
@@ -735,7 +728,18 @@ Expected: FAIL (module not found).
 
 `lib/registry/client.ts`:
 ```ts
+import { z } from "zod";
 import type { RegistryCredential } from "./credentials";
+
+const tokenResponseSchema = z.object({
+  token: z.string().optional(),
+  access_token: z.string().optional(),
+});
+const tagsListSchema = z.object({ tags: z.array(z.string()).nullish() });
+const manifestSchema = z.object({
+  config: z.object({ digest: z.string() }).optional(),
+});
+const imageConfigSchema = z.object({ created: z.string().optional() });
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -817,12 +821,8 @@ export class RegistryClient {
       tokenUrl.toString(),
       basic ? { headers: { Authorization: basic } } : undefined,
     );
-    const tokenBody: unknown = await tokenResp.json();
-    const token =
-      typeof tokenBody === "object" && tokenBody !== null
-        ? ((tokenBody as Record<string, string>).token ??
-          (tokenBody as Record<string, string>).access_token)
-        : undefined;
+    const tokenBody = tokenResponseSchema.parse(await tokenResp.json());
+    const token = tokenBody.token ?? tokenBody.access_token;
     if (accept) {
       headers.Accept = accept;
     }
@@ -837,7 +837,7 @@ export class RegistryClient {
     if (!resp.ok) {
       throw new Error(`tags/list failed: ${resp.status}`);
     }
-    const body = (await resp.json()) as { tags?: string[] };
+    const body = tagsListSchema.parse(await resp.json());
     return body.tags ?? [];
   }
 
@@ -853,13 +853,13 @@ export class RegistryClient {
   async getCreated(repository: string, ref: string): Promise<string | null> {
     try {
       const resp = await this.authedFetch(`/v2/${repository}/manifests/${ref}`, MANIFEST_ACCEPT);
-      const manifest = (await resp.json()) as { config?: { digest?: string } };
+      const manifest = manifestSchema.parse(await resp.json());
       const configDigest = manifest.config?.digest;
       if (!configDigest) {
         return null;
       }
       const blob = await this.authedFetch(`/v2/${repository}/blobs/${configDigest}`);
-      const config = (await blob.json()) as { created?: string };
+      const config = imageConfigSchema.parse(await blob.json());
       return config.created ?? null;
     } catch {
       return null;
