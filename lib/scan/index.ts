@@ -51,17 +51,17 @@ export async function scan(opts: { repo?: string } = {}): Promise<ScanReport> {
   const watched = await inspectWatched();
   const containers = await Promise.all(
     watched.map(async (container): Promise<ContainerReport> => {
-      const ref = parseImageRef(container.image);
-      if (opts.repo && ref.repository !== opts.repo) {
-        return {
-          container,
-          status: computeStatus({ container, upstreamDigest: container.currentDigest }),
-          upstreamDigest: container.currentDigest,
-          targets: [],
-          error: null,
-        };
-      }
       try {
+        const ref = parseImageRef(container.image);
+        if (opts.repo && ref.repository !== opts.repo) {
+          return {
+            container,
+            status: computeStatus({ container, upstreamDigest: container.currentDigest }),
+            upstreamDigest: container.currentDigest,
+            targets: [],
+            error: null,
+          };
+        }
         const client = await clientForRegistry(ref.registry);
         const upstreamDigest = await client.resolveDigest(ref.repository, ref.tag);
         if (shouldAutoUpdate(container, upstreamDigest)) {
