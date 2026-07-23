@@ -1,13 +1,21 @@
 services:
   rollback-tower:
-    build: .
+    # Published by CI to ECR. Pin a version tag (e.g. :1.0.1) for production
+    # rather than tracking :latest.
+    image: 237284831831.dkr.ecr.us-east-2.amazonaws.com/rollback-tower:latest
     ports:
       - "3000:3000"
     environment:
       POLL_INTERVAL: "300s"
-      WEBHOOK_TOKEN: "change-me"
-      # ADMIN_PASSWORD: "set-to-require-login"
-      # SESSION_SECRET: "required-if-admin-password-set"
+      # Secrets are read from files via the *_FILE variants (see `secrets:`
+      # below). Compose mounts each secret at /run/secrets/<name>.
+      WEBHOOK_TOKEN_FILE: /run/secrets/webhook_token
+      # ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # SESSION_SECRET_FILE: /run/secrets/session_secret
+    secrets:
+      - webhook_token
+      # - admin_password
+      # - session_secret
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ~/.docker/config.json:/root/.docker/config.json:ro
@@ -17,3 +25,11 @@ services:
   #   image: nginx:latest
   #   labels:
   #     rollback-tower.enable: "true"
+
+secrets:
+  webhook_token:
+    file: ./secrets/webhook_token.txt
+  # admin_password:
+  #   file: ./secrets/admin_password.txt
+  # session_secret:
+  #   file: ./secrets/session_secret.txt

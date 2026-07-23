@@ -26,6 +26,15 @@ Opt a container in by adding the label `rollback-tower.enable=true`.
 
 When `ADMIN_PASSWORD` is unset the app is open — put it behind a proxy/VPN.
 
+### Secrets from files
+
+`ADMIN_PASSWORD`, `SESSION_SECRET`, and `WEBHOOK_TOKEN` each also accept a
+`_FILE` variant (`ADMIN_PASSWORD_FILE`, etc.) pointing to a file that holds
+the value — handy for Docker/Kubernetes secrets. When both are set the
+`_FILE` variant wins. Trailing whitespace is trimmed, so a trailing newline
+is fine. If a `_FILE` is set but its file can't be read, startup fails rather
+than silently continuing without the secret.
+
 ## Webhook
 
     curl -X POST "https://host/api/webhook?token=$WEBHOOK_TOKEN"
