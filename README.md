@@ -29,3 +29,27 @@ When `ADMIN_PASSWORD` is unset the app is open — put it behind a proxy/VPN.
 ## Webhook
 
     curl -X POST "https://host/api/webhook?token=$WEBHOOK_TOKEN"
+
+## Publishing (CI)
+
+`.github/workflows/publish-ecr.yml` builds a multi-arch (`amd64` + `arm64`)
+image and pushes it to Amazon ECR on every push to `main` and on `vX.Y.Z`
+tags. Tags applied: the commit `sha-<short>` (main builds), the semver
+`{version}` and `{major}.{minor}` (release tags), and `latest` (whichever
+build ran most recently).
+
+Auth uses GitHub OIDC — no static AWS keys are stored. One-time setup:
+
+1. In AWS, add GitHub's OIDC provider
+   (`token.actions.githubusercontent.com`) and an IAM role whose trust policy
+   is scoped to this repo (`repo:spqr-game/rollback-tower:*`). Grant it
+   `ecr:GetAuthorizationToken` plus push permissions on the target
+   repository.
+2. Create the ECR repository.
+3. Set these in the GitHub repo:
+
+   | Name | Kind | Example |
+   | --- | --- | --- |
+   | `AWS_ROLE_ARN` | secret | `arn:aws:iam::123456789012:role/rollback-tower-ci` |
+   | `AWS_REGION` | variable | `us-east-1` |
+   | `ECR_REPOSITORY` | variable | `rollback-tower` |
