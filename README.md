@@ -41,10 +41,25 @@ build ran most recently).
 Auth uses GitHub OIDC — no static AWS keys are stored. One-time setup:
 
 1. In AWS, add GitHub's OIDC provider
-   (`token.actions.githubusercontent.com`) and an IAM role whose trust policy
-   is scoped to this repo (`repo:spqr-game/rollback-tower:*`). Grant it
-   `ecr:GetAuthorizationToken` plus push permissions on the target
-   repository.
+   (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`) and
+   an IAM role that trusts it. AWS requires the role's trust policy to scope
+   on the `sub` claim. GitHub now issues **immutable subject claims** for this
+   repo, so `sub` embeds numeric org/repo IDs rather than the slug — a
+   pattern like `repo:<org>/<repo>:ref:refs/heads/main` will **not** match.
+   Fetch the actual prefix and build the condition from it:
+
+   ```sh
+   gh api /repos/spqr-game/rollback-tower/actions/oidc/customization/sub \
+     --jq .sub_claim_prefix
+   # -> repo:spqr-game@65671182/rollback-tower@1306767090
+   ```
+
+   Then scope `sub` (StringLike) to that prefix on the refs the workflow runs:
+   `<prefix>:ref:refs/heads/main` and `<prefix>:ref:refs/tags/*`. Grant the
+   role `ecr:GetAuthorizationToken` (resource `*`) plus push actions
+   (`BatchCheckLayerAvailability`, `InitiateLayerUpload`, `UploadLayerPart`,
+   `CompleteLayerUpload`, `PutImage`, `BatchGetImage`,
+   `GetDownloadUrlForLayer`) scoped to the target repository ARN.
 2. Create the ECR repository.
 3. Set these in the GitHub repo:
 
