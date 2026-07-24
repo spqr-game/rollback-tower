@@ -22,6 +22,7 @@ Opt a container in by adding the label `rollback-tower.enable=true`.
 | `SESSION_SECRET` | Cookie signing secret; required if password set | — |
 | `WEBHOOK_TOKEN` | Required for `/api/webhook`; unset → 503 | unset |
 | `MAX_TAGS` | Cap on rollback targets listed per repo | `50` |
+| `DOCKER_HOST` | Docker daemon to connect to (see below) | unix socket `/var/run/docker.sock` |
 | `DOCKER_CONFIG` | Path to docker config.json | `~/.docker/config.json` |
 
 When `ADMIN_PASSWORD` is unset the app is open — put it behind a proxy/VPN.
@@ -34,6 +35,23 @@ the value — handy for Docker/Kubernetes secrets. When both are set the
 `_FILE` variant wins. Trailing whitespace is trimmed, so a trailing newline
 is fine. If a `_FILE` is set but its file can't be read, startup fails rather
 than silently continuing without the secret.
+
+## Local development
+
+The app can run outside a container (`npm run dev`) against your host's Docker
+daemon. Point it at the right socket and docker config with `DOCKER_HOST` and
+`DOCKER_CONFIG`. `DOCKER_HOST` accepts:
+
+- unset → dockerode's default `/var/run/docker.sock`
+- `unix:///path/to/docker.sock` or a bare `/path/to/docker.sock`
+- `tcp://host[:port]` (port defaults to `2375`) or `https://host:port`
+
+Copy `.env.local.example` to `.env.local` (git-ignored, auto-loaded by Next.js)
+and adjust. On macOS with Docker Desktop the socket is usually
+`~/.docker/run/docker.sock`:
+
+    DOCKER_HOST=unix:///Users/you/.docker/run/docker.sock
+    DOCKER_CONFIG=/Users/you/.docker/config.json
 
 ## Webhook
 
