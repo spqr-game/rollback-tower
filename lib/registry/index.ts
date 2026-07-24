@@ -3,7 +3,7 @@ import type { RegistryClient } from "./client";
 
 export interface TagTarget {
   tag: string;
-  digest: string;
+  digest: string | null;
   created: string | null;
 }
 
@@ -11,6 +11,11 @@ export interface RollbackTargets {
   targets: TagTarget[];
   truncated: boolean;
 }
+
+// When tag info is enabled, only the newest few tags get their digest/created
+// resolved — each costs extra registry requests, so we cap it to stay well
+// under registry rate limits regardless of MAX_TAGS.
+const TAG_INFO_LIMIT = 5;
 
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)/;
 
@@ -37,26 +42,43 @@ export function sortTags(tags: string[]): string[] {
   });
 }
 
+// Returns the newest rollback tags. Tag names come from a single tags/list
+// call. When tagInfo is on, only the first TAG_INFO_LIMIT tags get their
+// digest/created resolved (each is extra manifest/blob fetches) — this keeps a
+// scan cheap enough to stay under registry rate limits regardless of maxTags.
+// Remaining tags (and all tags when tagInfo is off) carry null info.
 export async function listRollbackTargets(
   ref: ImageRef,
   client: Pick<RegistryClient, "listTags" | "resolveDigest" | "getCreated">,
   maxTags: number,
-  warn: (msg: string) => void = () => {},
+  options: { tagInfo?: boolean; warn?: (msg: string) => void } = {},
 ): Promise<RollbackTargets> {
+  const { tagInfo = true, warn = () => {} } = options;
   const all = sortTags(await client.listTags(ref.repository));
-  const selected = all.slice(0, maxTags);
-  const truncated = all.length > selected.length;
+  const names = all.slice(0, maxTags);
+  const truncated = all.length > names.length;
   if (truncated) {
     warn(`Tag list for ${ref.repository} truncated to ${maxTags} of ${all.length}`);
   }
-  const targets = await Promise.all(
-    selected.map(async (tag): Promise<TagTarget> => {
+
+  const enrich = tagInfo ? names.slice(0, TAG_INFO_LIMIT) : [];
+  const info = new Map<string, { digest: string | null; created: string | null }>();
+  await Promise.all(
+    enrich.map(async (tag) => {
       const [digest, created] = await Promise.all([
-        client.resolveDigest(ref.repository, tag),
+        // Best-effort: a failed digest lookup (e.g. rate limit) must not drop
+        // the tag or abort the scan — it just shows without info.
+        client.resolveDigest(ref.repository, tag).catch(() => null),
         client.getCreated(ref.repository, tag),
       ]);
-      return { tag, digest, created };
+      info.set(tag, { digest, created });
     }),
   );
+
+  const targets = names.map((tag) => ({
+    tag,
+    digest: info.get(tag)?.digest ?? null,
+    created: info.get(tag)?.created ?? null,
+  }));
   return { targets, truncated };
 }

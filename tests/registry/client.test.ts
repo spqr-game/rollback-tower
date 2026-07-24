@@ -79,6 +79,42 @@ describe("RegistryClient", () => {
     expect(tokenAuth).toBe(`Basic ${Buffer.from("u:p").toString("base64")}`);
   });
 
+  it("reuses a bearer token across requests with the same scope", async () => {
+    let tokenFetches = 0;
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/v2/library/redis/") && !init?.headers) {
+        return new Response("", {
+          status: 401,
+          headers: {
+            "www-authenticate":
+              'Bearer realm="https://auth.test/token",service="reg",scope="repository:library/redis:pull"',
+          },
+        });
+      }
+      if (url.startsWith("https://auth.test/token")) {
+        tokenFetches += 1;
+        return jsonResponse({ token: "TOKEN" });
+      }
+      if (url.endsWith("/tags/list")) {
+        return jsonResponse({ tags: ["1.0.0"] });
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "docker-content-digest": "sha256:z" },
+      });
+    });
+    const client = new RegistryClient("registry-1.docker.io", { fetchImpl });
+    await client.listTags("library/redis");
+    await client.resolveDigest("library/redis", "1.0.0");
+    expect(tokenFetches).toBe(1);
+  });
+
+  it("throws a clear error when the registry rate-limits (429)", async () => {
+    const fetchImpl = vi.fn(async () => new Response("", { status: 429 }));
+    const client = new RegistryClient("registry-1.docker.io", { fetchImpl });
+    await expect(client.resolveDigest("library/mariadb", "latest")).rejects.toThrow(/429/);
+  });
+
   it("getCreated follows the config blob and returns its created time", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes("/manifests/")) {

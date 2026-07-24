@@ -17,16 +17,16 @@ sources:
 2. Each image's **registry**, using credentials from a read-only mounted
    `~/.docker/config.json`.
 
-The `rolled-back` state and watch opt-in both live as **labels on the containers
+The pinned state and watch opt-in both live as **labels on the containers
 themselves**, so there is no app-owned persistence to manage or back up.
 
 ## Goals
 
 - Watch only containers explicitly opted in via label.
 - Show, in a web UI: what image/tag is live per container, its short digest, whether an
-  update is available, and whether it is pinned (rolled back).
+  update is available, and whether it is pinned.
 - Auto-update watched containers when their running tag changes upstream, **unless**
-  the container is marked rolled-back.
+  the container is pinned.
 - Let an operator apply a specific tag (forward update or rollback) from the registry's
   tag list, and resume auto-updates for a pinned container.
 - Trigger scans three ways: periodic in-process poll, inbound webhook, manual button.
@@ -60,11 +60,11 @@ app/
     scan/route.ts         # POST: manual scan (auth-gated)
     webhook/route.ts      # POST: token-gated scan trigger
     containers/[id]/apply/route.ts    # POST { tag }: apply/rollback (auth-gated)
-    containers/[id]/resume/route.ts   # POST: clear rolled-back label (auth-gated)
+    containers/[id]/resume/route.ts   # POST: clear pinned label (auth-gated)
 lib/
   docker/                 # dockerode wrapper: discover, inspect, recreate, labels
   registry/               # image-ref parse, docker config creds, v2 API client
-  scan/                   # scan(), applyTag(), resumeAutoUpdate()
+  scan/                   # scan(), applyTag(), updateToLatest(), pin(), unpin()
   auth/                   # password session + webhook token verification
   config.ts               # env parsing/validation
 instrumentation.ts        # boots the poller
@@ -92,9 +92,9 @@ testable with the Docker socket and network `fetch` mocked.
      rollback does not leave the service down.
 - **Managed labels:**
   - `rollback-tower.enable=true` — opt in (set by the user, not the app).
-  - `rollback-tower.rolled-back=<tag-or-digest>` — set by the app on rollback/off-current
-    apply; cleared on "resume auto-updates". Presence exempts the container from
-    auto-update.
+  - `rollback-tower.pinned=<digest>` — a manual toggle (set via the **Pin** button or by
+    hand, cleared via **Unpin**); the app never sets it on tag apply. Presence freezes the
+    container at its current digest and exempts it from auto-update.
 
 ## Registry integration (`lib/registry`)
 
@@ -121,17 +121,18 @@ testable with the Docker socket and network `fetch` mocked.
 
 - `scan(opts?)`: for each watched container →
   1. resolve the running tag's current upstream digest;
-  2. if it differs from the running digest **and** the container has no `rolled-back`
-     label → pull + recreate (auto-update);
+  2. if it differs from the running digest **and** the container is not pinned
+     → pull + recreate (auto-update);
   3. otherwise report status only.
   - Containers are processed with bounded concurrency; each is isolated so one failure
     does not abort the sweep. Errors are captured per-container for the UI.
   - Optional `repo` filter (used by webhook payloads) restricts the sweep.
-- `applyTag(containerId, tag)`: pull the target, recreate; set the `rolled-back` label
-  when the target is not the container's current tag (i.e. this is a rollback or a pin,
-  not a normal forward update to the tracked tag).
-- `resumeAutoUpdate(containerId)`: remove the `rolled-back` label; the next scan may
-  update the container again.
+- `applyTag(containerId, tag)`: pull the target, recreate onto that tag. Does **not**
+  touch the pinned label — selecting a tag just changes which tag runs.
+- `updateToLatest(containerId)`: recreate onto the `latest` tag. Backs the "Update to
+  latest" button, shown when the running digest differs from `latest`.
+- `pin(containerId)` / `unpin(containerId)`: set/clear the `pinned` label (recreating to
+  change labels). Pin freezes the current digest; unpin resumes tracking the tag.
 
 ## Auth (`lib/auth`, `middleware.ts`)
 
@@ -147,9 +148,9 @@ testable with the Docker socket and network `fetch` mocked.
 
 - **Single dashboard** (`/`), server component reading live state:
   - Per watched container: name, image, current tag + short digest, status badge
-    (`up-to-date` / `update available` / `rolled-back` / `error`), last-scan time.
-  - Row expand → available tags (digest, created, "current" marker) each with an
-    **Apply** button; a **Resume auto-updates** button shown when rolled-back.
+    (`up-to-date` / `update available` / `pinned` / `error`), last-scan time.
+  - Row expand → available tags each with an **Apply** button; a **Pin**/**Unpin**
+    toggle; an **Update to latest** button when the running digest differs from `latest`.
   - Header **Scan now** button.
 - Mutations go through the route handlers above; the view revalidates after each action.
 - Minimal, clean styling; no heavy design system in v1.
@@ -183,7 +184,7 @@ Unit tests, no live Docker or registry:
 - Registry auth: reading `config.json` `auths`, v2 bearer token flow, anonymous
   fallback, truncation logging.
 - Digest comparison / "update available" logic.
-- Scan decision logic: auto-update vs skip-because-rolled-back, per-repo filter.
+- Scan decision logic: auto-update vs skip-because-pinned, per-repo filter.
 - Recreate logic against a mocked Docker API (config capture → create args), including
   the failure-restore path.
 - Auth: password session issue/verify, webhook constant-time token check, 503 when

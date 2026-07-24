@@ -20,11 +20,16 @@ describe("parseDuration", () => {
 describe("loadConfig", () => {
   it("applies defaults", () => {
     const c = loadConfig({ HOME: "/home/x" });
-    expect(c.pollIntervalMs).toBe(300_000);
+    expect(c.pollIntervalMs).toBe(0);
     expect(c.adminPassword).toBeNull();
     expect(c.webhookToken).toBeNull();
     expect(c.maxTags).toBe(50);
     expect(c.dockerConfigPath).toBe("/home/x/.docker/config.json");
+  });
+  it("disables polling when POLL_INTERVAL is unset, honors it when set", () => {
+    expect(loadConfig({}).pollIntervalMs).toBe(0);
+    expect(loadConfig({ POLL_INTERVAL: "300s" }).pollIntervalMs).toBe(300_000);
+    expect(loadConfig({ POLL_INTERVAL: "0" }).pollIntervalMs).toBe(0);
   });
   it("reads overrides and requires SESSION_SECRET when password set", () => {
     expect(() =>
@@ -38,6 +43,14 @@ describe("loadConfig", () => {
   it("falls back to MAX_TAGS default on a non-numeric value", () => {
     expect(loadConfig({ MAX_TAGS: "abc" }).maxTags).toBe(50);
     expect(loadConfig({ MAX_TAGS: "-5" }).maxTags).toBe(50);
+  });
+  it("enables tag info by default and disables it on falsy values", () => {
+    expect(loadConfig({}).tagInfo).toBe(true);
+    expect(loadConfig({ TAG_INFO: "1" }).tagInfo).toBe(true);
+    expect(loadConfig({ TAG_INFO: "0" }).tagInfo).toBe(false);
+    expect(loadConfig({ TAG_INFO: "false" }).tagInfo).toBe(false);
+    expect(loadConfig({ TAG_INFO: "OFF" }).tagInfo).toBe(false);
+    expect(loadConfig({ TAG_INFO: "no" }).tagInfo).toBe(false);
   });
 });
 

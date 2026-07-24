@@ -50,6 +50,9 @@ export class RegistryClient {
   private readonly base: string;
   private readonly fetchImpl: FetchLike;
   private readonly credential: RegistryCredential | null;
+  // Bearer tokens issued during this client's life, keyed by challenge scope,
+  // so repeated manifest/tag requests in one scan don't re-authenticate.
+  private readonly tokenByScope = new Map<string, string>();
 
   constructor(registry: string, options: RegistryClientOptions = {}) {
     this.base = `https://${registry}`;
@@ -63,6 +66,23 @@ export class RegistryClient {
     }
     const raw = `${this.credential.username}:${this.credential.password}`;
     return `Basic ${Buffer.from(raw).toString("base64")}`;
+  }
+
+  private async fetchToken(challenge: Challenge): Promise<string | undefined> {
+    const tokenUrl = new URL(challenge.realm);
+    if (challenge.service) {
+      tokenUrl.searchParams.set("service", challenge.service);
+    }
+    if (challenge.scope) {
+      tokenUrl.searchParams.set("scope", challenge.scope);
+    }
+    const basic = this.basicHeader();
+    const tokenResp = await this.fetchImpl(
+      tokenUrl.toString(),
+      basic ? { headers: { Authorization: basic } } : undefined,
+    );
+    const tokenBody = tokenResponseSchema.parse(await tokenResp.json());
+    return tokenBody.token ?? tokenBody.access_token;
   }
 
   private async authedFetch(path: string, accept?: string): Promise<Response> {
@@ -80,20 +100,14 @@ export class RegistryClient {
     if (!challenge) {
       return first;
     }
-    const tokenUrl = new URL(challenge.realm);
-    if (challenge.service) {
-      tokenUrl.searchParams.set("service", challenge.service);
+    const scope = challenge.scope ?? "";
+    let token = this.tokenByScope.get(scope);
+    if (!token) {
+      token = await this.fetchToken(challenge);
+      if (token) {
+        this.tokenByScope.set(scope, token);
+      }
     }
-    if (challenge.scope) {
-      tokenUrl.searchParams.set("scope", challenge.scope);
-    }
-    const basic = this.basicHeader();
-    const tokenResp = await this.fetchImpl(
-      tokenUrl.toString(),
-      basic ? { headers: { Authorization: basic } } : undefined,
-    );
-    const tokenBody = tokenResponseSchema.parse(await tokenResp.json());
-    const token = tokenBody.token ?? tokenBody.access_token;
     const retryHeaders: Record<string, string> = { ...headers };
     if (token) {
       retryHeaders.Authorization = `Bearer ${token}`;
@@ -112,6 +126,11 @@ export class RegistryClient {
 
   async resolveDigest(repository: string, ref: string): Promise<string> {
     const resp = await this.authedFetch(`/v2/${repository}/manifests/${ref}`, MANIFEST_ACCEPT);
+    if (resp.status === 429) {
+      throw new Error(
+        `registry rate limit reached for ${repository}:${ref} (429); increase POLL_INTERVAL or authenticate to the registry`,
+      );
+    }
     const digest = resp.headers.get("docker-content-digest");
     if (!digest) {
       throw new Error(`no digest for ${repository}:${ref} (status ${resp.status})`);

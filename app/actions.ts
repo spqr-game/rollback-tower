@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { applyTag, resumeAutoUpdate, scan } from "@/lib/scan";
+import { applyTag, pin, scan, unpin, updateToLatest } from "@/lib/scan";
 
 export async function runScan(): Promise<void> {
   await scan();
@@ -9,13 +9,23 @@ export async function runScan(): Promise<void> {
 }
 
 export async function applyTagAction(formData: FormData): Promise<void> {
-  const id = String(formData.get("id"));
+  const name = String(formData.get("name"));
   const tag = String(formData.get("tag"));
-  await applyTag(id, tag);
+  await applyTag(name, tag);
   revalidatePath("/");
 }
 
-export async function resumeAction(formData: FormData): Promise<void> {
-  await resumeAutoUpdate(String(formData.get("id")));
+export async function updateAction(formData: FormData): Promise<void> {
+  await updateToLatest(String(formData.get("name")));
+  revalidatePath("/");
+}
+
+export async function pinAction(formData: FormData): Promise<void> {
+  await pin(String(formData.get("name")));
+  revalidatePath("/");
+}
+
+export async function unpinAction(formData: FormData): Promise<void> {
+  await unpin(String(formData.get("name")));
   revalidatePath("/");
 }
