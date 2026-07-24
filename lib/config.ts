@@ -5,8 +5,18 @@ export interface Config {
   adminPassword: string | null;
   webhookToken: string | null;
   maxTags: number;
+  tagInfo: boolean;
   dockerConfigPath: string;
   sessionSecret: string | null;
+}
+
+const FALSY = new Set(["0", "false", "off", "no"]);
+
+function parseBool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  return !FALSY.has(value.trim().toLowerCase());
 }
 
 export function parseDuration(value: string): number {
@@ -68,10 +78,12 @@ export function loadConfig(env: Partial<NodeJS.ProcessEnv>): Config {
     throw new Error("SESSION_SECRET is required when ADMIN_PASSWORD is set");
   }
   return {
-    pollIntervalMs: parseDuration(env.POLL_INTERVAL ?? "300s"),
+    // Unset means polling is disabled (0); startPoller treats <= 0 as off.
+    pollIntervalMs: parseDuration(env.POLL_INTERVAL ?? "0"),
     adminPassword,
     webhookToken: resolveSecret(env, "WEBHOOK_TOKEN"),
     maxTags: parseMaxTags(env.MAX_TAGS),
+    tagInfo: parseBool(env.TAG_INFO, true),
     dockerConfigPath: defaultDockerConfigPath(env),
     sessionSecret,
   };

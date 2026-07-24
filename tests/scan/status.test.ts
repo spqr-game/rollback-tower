@@ -8,32 +8,32 @@ const base: WatchedContainer = {
   image: "nginx:latest",
   currentDigest: "sha256:aaa",
   labels: {},
-  rolledBack: null,
+  pinned: null,
 };
 
 describe("computeStatus", () => {
   it("reports error when an error is present", () => {
-    expect(computeStatus({ container: base, upstreamDigest: null, error: "x" })).toBe("error");
+    expect(computeStatus({ container: base, latestDigest: null, error: "x" })).toBe("error");
   });
-  it("reports rolled-back regardless of upstream", () => {
+  it("reports pinned regardless of the latest digest", () => {
     expect(
-      computeStatus({ container: { ...base, rolledBack: "1.0.0" }, upstreamDigest: "sha256:bbb" }),
-    ).toBe("rolled-back");
+      computeStatus({ container: { ...base, pinned: "1.0.0" }, latestDigest: "sha256:bbb" }),
+    ).toBe("pinned");
   });
-  it("reports update-available when digests differ", () => {
-    expect(computeStatus({ container: base, upstreamDigest: "sha256:bbb" })).toBe("update-available");
+  it("reports update-available when the running digest differs from latest", () => {
+    expect(computeStatus({ container: base, latestDigest: "sha256:bbb" })).toBe("update-available");
   });
-  it("reports up-to-date when digests match", () => {
-    expect(computeStatus({ container: base, upstreamDigest: "sha256:aaa" })).toBe("up-to-date");
+  it("reports up-to-date when the running digest matches latest", () => {
+    expect(computeStatus({ container: base, latestDigest: "sha256:aaa" })).toBe("up-to-date");
   });
 });
 
 describe("shouldAutoUpdate", () => {
-  it("updates when a newer digest is available and not rolled back", () => {
+  it("updates when a newer digest is available and not pinned", () => {
     expect(shouldAutoUpdate(base, "sha256:bbb")).toBe(true);
   });
-  it("never updates a rolled-back container", () => {
-    expect(shouldAutoUpdate({ ...base, rolledBack: "1.0.0" }, "sha256:bbb")).toBe(false);
+  it("never updates a pinned container", () => {
+    expect(shouldAutoUpdate({ ...base, pinned: "1.0.0" }, "sha256:bbb")).toBe(false);
   });
   it("does not update when already current", () => {
     expect(shouldAutoUpdate(base, "sha256:aaa")).toBe(false);

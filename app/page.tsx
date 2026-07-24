@@ -1,5 +1,5 @@
 import { scan } from "@/lib/scan";
-import { applyTagAction, resumeAction, runScan } from "./actions";
+import { applyTagAction, pinAction, runScan, unpinAction, updateAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,24 +18,38 @@ export default async function Home() {
         <section key={c.container.id} style={{ borderTop: "1px solid #8884", padding: "0.75rem 0" }}>
           <h2>
             {c.container.name} — <code>{c.container.image}</code>{" "}
-            <span>[{c.status}]</span>
+            {c.status === "update-available" ? (
+              <form action={updateAction} style={{ display: "inline" }}>
+                <input type="hidden" name="name" value={c.container.name} />
+                <button type="submit">Update to latest</button>
+              </form>
+            ) : (
+              <span>[{c.status}]</span>
+            )}
           </h2>
           <p>
             Digest: <code>{c.container.currentDigest?.slice(0, 19) ?? "unknown"}</code>
           </p>
-          {c.container.rolledBack ? (
-            <form action={resumeAction}>
-              <input type="hidden" name="id" value={c.container.id} />
-              <button type="submit">Resume auto-updates</button>
+          {c.container.pinned ? (
+            <form action={unpinAction} style={{ display: "inline" }}>
+              <input type="hidden" name="name" value={c.container.name} />
+              <button type="submit">Unpin</button>
             </form>
-          ) : null}
+          ) : (
+            <form action={pinAction} style={{ display: "inline" }}>
+              <input type="hidden" name="name" value={c.container.name} />
+              <button type="submit">Pin</button>
+            </form>
+          )}
           {c.error ? <p style={{ color: "crimson" }}>Error: {c.error}</p> : null}
           <ul>
             {c.targets.map((t) => (
               <li key={t.tag}>
-                <code>{t.tag}</code> — {t.digest.slice(0, 19)} — {t.created ?? "?"}
+                <code>{t.tag}</code>
+                {t.digest ? <> — {t.digest.slice(0, 19)}</> : null}
+                {t.created ? <> — {t.created}</> : null}
                 <form action={applyTagAction} style={{ display: "inline" }}>
-                  <input type="hidden" name="id" value={c.container.id} />
+                  <input type="hidden" name="name" value={c.container.name} />
                   <input type="hidden" name="tag" value={t.tag} />
                   <button type="submit">Apply</button>
                 </form>

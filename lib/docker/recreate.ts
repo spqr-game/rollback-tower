@@ -42,9 +42,18 @@ export function buildCreateOptions(
   };
 }
 
-function pullImage(docker: Dockerode, image: string): Promise<void> {
+// Pass the registry credential through to the daemon as authconfig. dockerode
+// does NOT read ~/.docker/config.json, so without this the daemon pulls
+// anonymously and hits the (much lower) anonymous rate limit — a 429 even when
+// the operator is logged in.
+function pullImage(
+  docker: Dockerode,
+  image: string,
+  authconfig?: Dockerode.AuthConfig,
+): Promise<void> {
+  const options = authconfig ? { authconfig } : {};
   return new Promise((resolve, reject) => {
-    docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
+    docker.pull(image, options, (err: Error | null, stream?: NodeJS.ReadableStream) => {
       if (err || !stream) {
         reject(err ?? new Error("pull returned no stream"));
         return;
@@ -65,11 +74,12 @@ export async function recreateWithImage(args: {
   containerId: string;
   image: string;
   labelOverrides: Record<string, string | null>;
+  authconfig?: Dockerode.AuthConfig;
 }): Promise<string> {
-  const { docker, containerId, image, labelOverrides } = args;
+  const { docker, containerId, image, labelOverrides, authconfig } = args;
   const old = docker.getContainer(containerId);
   const info = await old.inspect();
-  await pullImage(docker, image);
+  await pullImage(docker, image, authconfig);
   const createOptions = buildCreateOptions(info, image, labelOverrides);
 
   await old.stop().catch(() => undefined);

@@ -2,8 +2,8 @@
 
 Stateless, single-host container update/rollback dashboard. Watches Docker
 containers labeled `rollback-tower.enable=true`, auto-updates them when their
-image tag changes upstream (unless pinned by a rollback), and lets you roll
-back or switch to any tag published in the image's registry.
+running tag changes upstream (unless pinned), and lets you switch to any tag
+published in the image's registry.
 
 ## Run
 
@@ -13,15 +13,28 @@ Mount the Docker socket and your registry credentials read-only:
 
 Opt a container in by adding the label `rollback-tower.enable=true`.
 
+## Pinning
+
+Auto-update follows a container's **running tag**: if the tag it runs (e.g.
+`latest`, or `11`) gets a new digest upstream, it's recreated on the new
+digest. Switching tags from the dashboard just changes the running tag.
+
+To hold a container at its current image, **Pin** it (or set the
+`rollback-tower.pinned` label yourself). A pinned container is frozen at its
+current digest and skipped by auto-update until you **Unpin** it. The
+dashboard also shows an **Update to latest** button whenever the running digest
+differs from the `latest` tag's digest.
+
 ## Environment
 
 | Var | Meaning | Default |
 | --- | --- | --- |
-| `POLL_INTERVAL` | Poll cadence (`300s`, `5m`, `0` disables) | `300s` |
+| `POLL_INTERVAL` | Poll cadence (`300s`, `5m`); `0` or unset disables polling | unset (disabled) |
 | `ADMIN_PASSWORD` | If set, required to use the UI | unset (open) |
 | `SESSION_SECRET` | Cookie signing secret; required if password set | — |
 | `WEBHOOK_TOKEN` | Required for `/api/webhook`; unset → 503 | unset |
 | `MAX_TAGS` | Cap on rollback targets listed per repo | `50` |
+| `TAG_INFO` | Show digest/created for the newest 5 tags (`0`/`false`/`off`/`no` disables) | on |
 | `DOCKER_HOST` | Docker daemon to connect to (see below) | unix socket `/var/run/docker.sock` |
 | `DOCKER_CONFIG` | Path to docker config.json | `~/.docker/config.json` |
 
